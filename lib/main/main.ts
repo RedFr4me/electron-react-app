@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createAppWindow } from './app'
+import { registerDatabaseHandlers } from './database-handler'
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -8,6 +9,10 @@ import { createAppWindow } from './app'
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  // Register database IPC handlers
+  registerDatabaseHandlers()
+
   // Create app window
   createAppWindow()
 

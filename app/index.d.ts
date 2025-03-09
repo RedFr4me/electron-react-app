@@ -29,3 +29,26 @@ declare module '*.web' {
   const content: string
   export default content
 }
+
+import { PostgreSQLConnectionConfig, ConnectionTestResult, QueryResult } from './services/database/types'
+
+declare global {
+  interface Window {
+    electron: any
+    api: any
+    databaseApi: {
+      connect: (config: PostgreSQLConnectionConfig) => Promise<ConnectionTestResult>
+      disconnect: () => Promise<void>
+      testConnection: (config: PostgreSQLConnectionConfig) => Promise<ConnectionTestResult>
+      executeQuery: (sql: string) => Promise<QueryResult>
+      getSchemas: () => Promise<string[]>
+      getTables: (schema: string) => Promise<
+        {
+          name: string
+          type: 'table' | 'view' | 'materialized_view'
+        }[]
+      >
+      getTableColumns: (schema: string, table: string) => Promise<any[]>
+    }
+  }
+}

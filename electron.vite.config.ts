@@ -56,4 +56,18 @@ export default defineConfig({
     },
     plugins: [react(), tailwindcss()],
   },
+  build: {
+    plugins: [
+      {
+        name: 'open-devtools',
+        apply: 'serve',
+        configurePreviewServer(server) {
+          server.middlewares.use((req, res, next) => {
+            console.log('Setting up to open DevTools when Electron launches')
+            next()
+          })
+        },
+      },
+    ],
+  },
 })
