@@ -12,6 +12,7 @@ export interface PostgreSQLConnectionConfig {
   password: string
   ssl: boolean
   savePassword: boolean
+  lastUsed?: string
 }
 
 export interface ConnectionTestResult {
@@ -43,9 +44,11 @@ export interface QueryResult {
   fields: {
     name: string
     dataTypeID: number
-    dataType?: string
+    dataTypeSize: number
+    dataTypeModifier: number
+    format: string
   }[]
-  rowCount: number
   command: string
+  rowCount: number
   duration: number
 }

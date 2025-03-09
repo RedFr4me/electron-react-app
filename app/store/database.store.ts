@@ -35,6 +35,7 @@ interface DatabaseState {
   connectToDatabase: (connection: PostgreSQLConnectionConfig) => Promise<ConnectionTestResult>
   disconnectFromDatabase: () => Promise<void>
   testConnection: (connection: PostgreSQLConnectionConfig) => Promise<ConnectionTestResult>
+  autoConnectToLastUsed: () => Promise<ConnectionTestResult | null>
 
   setCurrentQuery: (query: string) => void
   executeQuery: (query?: string) => Promise<QueryResult | null>
@@ -133,6 +134,21 @@ export const useDatabaseStore = create<DatabaseState>((set, get) => {
       } finally {
         set({ isConnecting: false })
       }
+    },
+
+    autoConnectToLastUsed: async () => {
+      const lastUsedConnection = connectionManager.getLastUsedConnection()
+
+      if (!lastUsedConnection) {
+        return null
+      }
+
+      // If the connection requires a password but it's not saved, we can't auto-connect
+      if (!lastUsedConnection.password && !lastUsedConnection.savePassword) {
+        return null
+      }
+
+      return await get().connectToDatabase(lastUsedConnection)
     },
 
     disconnectFromDatabase: async () => {

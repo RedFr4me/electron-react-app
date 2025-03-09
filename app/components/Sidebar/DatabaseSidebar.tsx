@@ -21,6 +21,7 @@ import {
   AlertCircle,
   X,
   Check,
+  Loader2,
 } from 'lucide-react'
 
 export function DatabaseSidebar() {
@@ -33,8 +34,10 @@ export function DatabaseSidebar() {
     selectedConnection,
     isConnected,
     isConnecting,
+    connectionError,
     postgresqlService,
     executeQuery,
+    autoConnectToLastUsed,
   } = useDatabaseStore()
 
   // Connection state
@@ -43,6 +46,9 @@ export function DatabaseSidebar() {
   const [editingConnection, setEditingConnection] = useState<PostgreSQLConnectionConfig | undefined>(undefined)
   const [searchQuery, setSearchQuery] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  const [connectionStatuses, setConnectionStatuses] = useState<
+    Record<string, 'connected' | 'disconnected' | 'error' | 'connecting'>
+  >({})
 
   // Database explorer state
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set())
@@ -52,11 +58,71 @@ export function DatabaseSidebar() {
   const [loadingSchemas, setLoadingSchemas] = useState<Set<string>>(new Set())
   const [loadingTables, setLoadingTables] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  const [autoConnectAttempted, setAutoConnectAttempted] = useState(false)
 
   // Load connections on mount
   useEffect(() => {
     loadConnections()
   }, [loadConnections])
+
+  // Database explorer handlers
+  const toggleConnection = async (connectionId: string) => {
+    // Check if connection is already expanded
+    const newExpandedConnections = new Set(expandedConnections)
+
+    if (newExpandedConnections.has(connectionId)) {
+      newExpandedConnections.delete(connectionId)
+    } else {
+      newExpandedConnections.add(connectionId)
+      // Load schemas when expanding a connection
+      await loadSchemas(connectionId)
+    }
+
+    setExpandedConnections(newExpandedConnections)
+  }
+
+  // Auto-connect to last used connection
+  useEffect(() => {
+    const attemptAutoConnect = async () => {
+      if (connections.length > 0 && !isConnected && !autoConnectAttempted) {
+        setAutoConnectAttempted(true)
+        const result = await autoConnectToLastUsed()
+
+        if (result?.success && selectedConnection?.id) {
+          // If connection successful, expand the connection to show schemas
+          toggleConnection(selectedConnection.id)
+        }
+      }
+    }
+
+    attemptAutoConnect()
+  }, [connections, isConnected, autoConnectAttempted, autoConnectToLastUsed, selectedConnection])
+
+  // Update connection status when connection state changes
+  useEffect(() => {
+    if (selectedConnection?.id) {
+      const connectionId = selectedConnection.id
+      if (isConnecting) {
+        setConnectionStatuses((prev) => {
+          const updated = { ...prev }
+          updated[connectionId] = 'connecting'
+          return updated
+        })
+      } else if (isConnected) {
+        setConnectionStatuses((prev) => {
+          const updated = { ...prev }
+          updated[connectionId] = 'connected'
+          return updated
+        })
+      } else if (connectionError) {
+        setConnectionStatuses((prev) => {
+          const updated = { ...prev }
+          updated[connectionId] = 'error'
+          return updated
+        })
+      }
+    }
+  }, [isConnected, isConnecting, connectionError, selectedConnection])
 
   // Connection handlers
   const handleEdit = (connection: PostgreSQLConnectionConfig) => {
@@ -78,43 +144,52 @@ export function DatabaseSidebar() {
   }
 
   const handleConnect = async (connection: PostgreSQLConnectionConfig) => {
+    if (!connection.id) return
+
+    const connectionId = connection.id
+
     // If already connected, disconnect first
-    if (isConnected && selectedConnection?.id === connection.id) {
+    if (isConnected && selectedConnection?.id === connectionId) {
       await disconnectFromDatabase()
+      setConnectionStatuses((prev) => {
+        const updated = { ...prev }
+        updated[connectionId] = 'disconnected'
+        return updated
+      })
       return
     }
+
+    // Set connecting status
+    setConnectionStatuses((prev) => {
+      const updated = { ...prev }
+      updated[connectionId] = 'connecting'
+      return updated
+    })
 
     // Connect to the database
     const result = await connectToDatabase(connection)
 
     if (result.success) {
       // If connection successful, expand the connection to show schemas
-      toggleConnection(connection.id!)
+      toggleConnection(connectionId)
+      setConnectionStatuses((prev) => {
+        const updated = { ...prev }
+        updated[connectionId] = 'connected'
+        return updated
+      })
     } else {
+      // Set error status
+      setConnectionStatuses((prev) => {
+        const updated = { ...prev }
+        updated[connectionId] = 'error'
+        return updated
+      })
       // We'll handle this better with a toast notification in the future
       alert(`Connection failed: ${result.message}`)
     }
   }
 
   // Database explorer handlers
-  const toggleConnection = async (connectionId: string) => {
-    const newExpandedConnections = new Set(expandedConnections)
-
-    if (newExpandedConnections.has(connectionId)) {
-      // Collapse connection
-      newExpandedConnections.delete(connectionId)
-    } else {
-      // Expand connection and load schemas if connected
-      newExpandedConnections.add(connectionId)
-
-      if (isConnected && selectedConnection?.id === connectionId) {
-        loadSchemas(connectionId)
-      }
-    }
-
-    setExpandedConnections(newExpandedConnections)
-  }
-
   const toggleSchema = async (connectionId: string, schemaName: string) => {
     // Get or create the set of expanded schemas for this connection
     const connectionSchemas = expandedSchemas.get(connectionId) || new Set<string>()
@@ -140,7 +215,11 @@ export function DatabaseSidebar() {
   }
 
   const loadSchemas = async (connectionId: string) => {
-    if (!isConnected || selectedConnection?.id !== connectionId) return
+    // If we're not connected yet or the selected connection doesn't match, just expand without loading
+    if (!isConnected || selectedConnection?.id !== connectionId) {
+      console.log('Not loading schemas - not connected or connection mismatch')
+      return
+    }
 
     // Add to loading set
     setLoadingSchemas((prev) => new Set(prev).add(connectionId))
@@ -245,6 +324,21 @@ export function DatabaseSidebar() {
     return bLastUsed.localeCompare(aLastUsed)
   })
 
+  // Render connection status indicator
+  const renderConnectionStatus = (connectionId: string) => {
+    const status = connectionStatuses[connectionId]
+
+    if (status === 'connecting') {
+      return <Loader2 className="h-4 w-4 text-blue-500 animate-spin ml-2" />
+    } else if (status === 'connected') {
+      return <Check className="h-4 w-4 text-green-500 ml-2" />
+    } else if (status === 'error') {
+      return <AlertCircle className="h-4 w-4 text-red-500 ml-2" />
+    }
+
+    return null
+  }
+
   return (
     <div className="h-full flex flex-col bg-gray-50 w-72 border-r">
       <div className="p-3 border-b bg-blue-600 text-white">
@@ -319,13 +413,7 @@ export function DatabaseSidebar() {
                   <div className="flex-1 flex items-center gap-1.5 truncate" onClick={() => handleConnect(connection)}>
                     <Server size={16} className="text-gray-600" />
                     <span className="font-medium truncate">{connection.name}</span>
-
-                    {selectedConnection?.id === connection.id &&
-                      (isConnecting ? (
-                        <RefreshCw size={12} className="animate-spin text-blue-500" />
-                      ) : isConnected ? (
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                      ) : null)}
+                    {renderConnectionStatus(connection.id!)}
                   </div>
 
                   <div className="flex">

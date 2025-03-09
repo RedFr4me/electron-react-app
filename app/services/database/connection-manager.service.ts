@@ -6,6 +6,7 @@ import { PostgreSQLConnectionConfig } from './types'
  */
 export class ConnectionManagerService {
   private static readonly STORAGE_KEY = 'db_connections'
+  private static readonly LAST_USED_KEY = 'last_used_connection_id'
 
   /**
    * Save a connection to localStorage
@@ -18,6 +19,7 @@ export class ConnectionManagerService {
     const connectionToSave: PostgreSQLConnectionConfig = {
       ...connection,
       id: connection.id || uuidv4(),
+      lastUsed: connection.lastUsed || new Date().toISOString(),
     }
 
     // Remove password if not saving
@@ -80,11 +82,18 @@ export class ConnectionManagerService {
     }
 
     localStorage.setItem(ConnectionManagerService.STORAGE_KEY, JSON.stringify(filteredConnections))
+
+    // If we deleted the last used connection, clear that reference
+    const lastUsedId = this.getLastUsedConnectionId()
+    if (lastUsedId === id) {
+      this.clearLastUsedConnection()
+    }
+
     return true
   }
 
   /**
-   * Update connection last used timestamp
+   * Update connection last used timestamp and set as last used connection
    */
   updateLastUsed(id: string): void {
     const connections = this.getConnections()
@@ -97,6 +106,34 @@ export class ConnectionManagerService {
       }
 
       this.saveConnection(updatedConnection)
+
+      // Store the ID of the last used connection
+      localStorage.setItem(ConnectionManagerService.LAST_USED_KEY, id)
     }
+  }
+
+  /**
+   * Get the last used connection ID
+   */
+  getLastUsedConnectionId(): string | null {
+    return localStorage.getItem(ConnectionManagerService.LAST_USED_KEY)
+  }
+
+  /**
+   * Get the last used connection
+   */
+  getLastUsedConnection(): PostgreSQLConnectionConfig | null {
+    const lastUsedId = this.getLastUsedConnectionId()
+    if (!lastUsedId) return null
+
+    const connection = this.getConnectionById(lastUsedId)
+    return connection || null
+  }
+
+  /**
+   * Clear the last used connection reference
+   */
+  clearLastUsedConnection(): void {
+    localStorage.removeItem(ConnectionManagerService.LAST_USED_KEY)
   }
 }
